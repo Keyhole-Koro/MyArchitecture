@@ -1,35 +1,33 @@
-Here’s the fully updated Computer Architecture Specification Document, incorporating the latest design decisions and refinements from our discussion:
+# 📀 Computer Architecture Specification Document
 
----
-
-# 📐 Computer Architecture Specification Document
-
-**Version:** Draft 2
+**Version:** Draft 3.1
+**Architecture:** 32-bit
 
 ---
 
 ## 1. 🧠 Word and Bus Widths
 
-* **Word size:** 16 bits
-* **Data bus width:** 16 bits
-* **Address bus width:** 16 bits
-* **Max addressable memory:** 64 KB (2¹⁶)
+* **Word size:** 32 bits
+* **Data bus width:** 32 bits
+* **Address bus width:** 32 bits
+* **Max addressable memory:** 4 GB (2³²)
 
 ---
 
-## 2. 🧮 Register Set
+## 2. 🫲 Register Set
 
 | Name  | Width             | Purpose                                   |
 | ----- | ----------------- | ----------------------------------------- |
-| R0–R7 | 16-bit            | General-purpose registers                 |
-| PC    | 16-bit            | Program Counter                           |
-| SP    | 16-bit            | Stack Pointer                             |
+| R0–R7 | 32-bit            | General-purpose registers                 |
+| PC    | 32-bit            | Program Counter                           |
+| SP    | 32-bit            | Stack Pointer                             |
+| BP    | 32-bit            | Base Pointer (newly introduced)           |
 | SR    | 8-bit             | Status Register (flags)                   |
-| IR    | 16-bit (optional) | Instruction Register (used for debugging) |
+| IR    | 32-bit (optional) | Instruction Register (used for debugging) |
 
 * **Stack direction:** ☑ Down
-* **Stack base address:** `0x7FFF`
-* **Calling convention:** Caller-saved registers; return address is pushed onto stack
+* **Stack base address:** `0x7FFFFFFF`
+* **Calling convention:** Manual (no CALL/RET); caller must manage PC and stack explicitly.
 
 ---
 
@@ -37,12 +35,12 @@ Here’s the fully updated Computer Architecture Specification Document, incorpo
 
 ### 3.1 Instruction Format
 
-* **Instruction length:** ☑ Fixed 16-bit
+* **Instruction length:** ☑ Fixed 32-bit
 * **Encoding format(s):**
 
-  * `5-bit opcode + 3-bit reg1 + 3-bit reg2 + 5-bit unused/imm` for `reg, reg` operations
-  * `5-bit opcode + 3-bit reg + 8-bit imm` for `reg, imm8` and `reg, port`
-  * `5-bit opcode + 11-bit imm` for control flow instructions
+  * `6-bit opcode + 5-bit reg1 + 5-bit reg2 + 16-bit imm/unused` for `reg, reg` operations
+  * `6-bit opcode + 5-bit reg + 21-bit imm` for `reg, imm21` and `reg, port`
+  * `6-bit opcode + 26-bit imm` for control flow and jumps
 
 ### 3.2 Addressing Modes
 
@@ -53,94 +51,113 @@ Here’s the fully updated Computer Architecture Specification Document, incorpo
 
 ### 3.3 Instruction Categories
 
-| Category      | Examples                          |
-| ------------- | --------------------------------- |
-| Data Movement | `MOV`, `MOVI`, `LD`, `ST`         |
-| Arithmetic    | `ADD`, `SUB`, `CMP`               |
-| Logic         | `AND`, `OR`, `XOR`, `SHL`, `SHR`  |
-| Control Flow  | `JMP`, `CALL`, `RET`, `JZ`, `JNZ` |
-| Stack         | `PUSH`, `POP`                     |
-| I/O           | `IN`, `OUT`                       |
-| Special       | `NOP`, `HALT`, `IRET`             |
+| Category      | Examples                         |
+| ------------- | -------------------------------- |
+| Data Movement | `mov`, `movi`, `load`, `store`   |
+| Arithmetic    | `add`, `sub`, `mcp`              |
+| Logic         | `and`, `or`, `xor`, `shl`, `shr`, `call`, `ret` |
+| Control Flow  | `jmp`, `jz`, `jnz`               |
+| Stack         | `push`, `pop`                    |
+| I/O           | `in`, `out`                      |
+| Special       | `nop`, `halt`, `iret`            |
 
 ---
 
-## 🔢 Opcode Assignment Table
+## 📉 Opcode Assignment Table
 
-| Format         | Bits         |
-| -------------- | ------------ |
-| Opcode         | 5 bits       |
-| Reg1 (if used) | 3 bits       |
-| Reg2 (if used) | 3 bits       |
-| Imm8 / imm11   | 8 or 11 bits |
+| Format         | Bits       |
+| -------------- | ---------- |
+| Opcode         | 6 bits     |
+| Reg1 (if used) | 5 bits     |
+| Reg2 (if used) | 5 bits     |
+| Imm16–26       | 16–26 bits |
 
-### 📥 Data Movement
+### 📅 Data Movement
 
-| Mnemonic        | Opcode | Pattern     | Description            |
-| --------------- | ------ | ----------- | ---------------------- |
-| `MOV R1, R2`    | `0x00` | `reg, reg`  | Copy R2 into R1        |
-| `MOVI R1, imm8` | `0x01` | `reg, imm8` | Load immediate into R1 |
-| `LD R1, R2`     | `0x02` | `reg, reg`  | R1 ← mem\[R2]          |
-| `ST R1, R2`     | `0x03` | `reg, reg`  | mem\[R1] ← R2          |
+---
 
-### ➕ Arithmetic/Logic
+| Mnemonic        | Opcode | Pattern      | Description                      |
+| --------------- | ------ | ------------ | -------------------------------- |
+| `mov r1, r2`    | `0x01` | `reg, reg`   | Copy r2 into r1                  |
+| `movi r1, imm`  | `0x02` | `reg, imm21` | Load **zero-extended** immediate |
+| `movis r1, imm` | `0x18` | `reg, imm21` | Load **sign-extended** immediate |
+| `load r1, r2`     | `0x03` | `reg, reg`   | r1 ← mem\[r2]                    |
+| `store r1, r2`     | `0x04` | `reg, reg`   | mem\[r1] ← r2                    |
 
-| Mnemonic     | Opcode | Pattern    | Description         |
-| ------------ | ------ | ---------- | ------------------- |
-| `ADD R1, R2` | `0x04` | `reg, reg` | R1 ← R1 + R2        |
-| `SUB R1, R2` | `0x05` | `reg, reg` | R1 ← R1 - R2        |
-| `CMP R1, R2` | `0x06` | `reg, reg` | Set flags for R1-R2 |
-| `AND R1, R2` | `0x07` | `reg, reg` | Bitwise AND         |
-| `OR R1, R2`  | `0x08` | `reg, reg` | Bitwise OR          |
-| `XOR R1, R2` | `0x09` | `reg, reg` | Bitwise XOR         |
-| `SHL R1`     | `0x0A` | `reg`      | Logical shift left  |
-| `SHR R1`     | `0x0B` | `reg`      | Logical shift right |
+---
 
-### 🔁 Control Flow
+### ➕ **Arithmetic/Logic**
 
-| Mnemonic    | Opcode | Pattern | Description            |
-| ----------- | ------ | ------- | ---------------------- |
-| `JMP addr`  | `0x0C` | `imm11` | Unconditional jump     |
-| `JZ addr`   | `0x0D` | `imm11` | Jump if zero           |
-| `JNZ addr`  | `0x0E` | `imm11` | Jump if not zero       |
-| `CALL addr` | `0x0F` | `imm11` | Call subroutine        |
-| `RET`       | `0x10` | —       | Return from subroutine |
+| Mnemonic      | Opcode | Pattern     | Description                    |
+| ------------- | ------ | ----------- | ------------------------------ |
+| `add r1, r2`  | `0x05` | `reg, reg`  | r1 ← r1 + r2                   |
+| `sub r1, r2`  | `0x06` | `reg, reg`  | r1 ← r1 - r2                   |
+| `cmp r1, r2`  | `0x07` | `reg, reg`  | Set flags for r1 - r2          |
+| `and r1, r2`  | `0x08` | `reg, reg`  | Bitwise AND                    |
+| `or r1, r2`   | `0x09` | `reg, reg`  | Bitwise OR                     |
+| `xor r1, r2`  | `0x0a` | `reg, reg`  | Bitwise XOR                    |
+| `shl r1`      | `0x0b` | `reg`       | Logical shift left             |
+| `shr r1`      | `0x0c` | `reg`       | Logical shift right            |
+| `addis r1, imm`| `0x19` | `reg, imm`  | r1 ← r1 + sign_extend(imm)     |
 
-### 📦 Stack
+
+---
+
+### ↺ **Control Flow**
+
+| Mnemonic    | Opcode | Pattern | Description                       |
+| ----------- | ------ | ------- | --------------------------------- |
+| `jmp addr`  | `0x0d` | `imm26` | Unconditional jump                |
+| `jz addr`   | `0x0e` | `imm26` | Jump if zero                      |
+| `jnz addr`  | `0x0f` | `imm26` | Jump if not zero                  |
+| `jg addr`   | `0x10` | `imm26` | Jump if greater (signed)          |
+| `jl addr`   | `0x11` | `imm26` | Jump if less (signed)             |
+| `ja addr`   | `0x12` | `imm26` | Jump if above (unsigned greater)  |
+| `jb addr`   | `0x13` | `imm26` | Jump if below (unsigned less)     |
+| `call addr` | `0x19` | `imm26` | Push return address, jump to addr |
+| `ret`       | `0x1a` | —       | Pop return address and jump       |
+
+---
+
+### 📦 **Stack**
 
 | Mnemonic  | Opcode | Pattern | Description      |
 | --------- | ------ | ------- | ---------------- |
-| `PUSH R1` | `0x11` | `reg`   | Push R1 to stack |
-| `POP R1`  | `0x12` | `reg`   | Pop from stack   |
+| `push r1` | `0x14` | `reg`   | Push r1 to stack |
+| `pop r1`  | `0x15` | `reg`   | Pop from stack   |
 
-### 🌐 I/O
+---
 
-| Mnemonic       | Opcode | Pattern     | Description    |
-| -------------- | ------ | ----------- | -------------- |
-| `IN R1, port`  | `0x13` | `reg, imm8` | Read from port |
-| `OUT port, R1` | `0x14` | `imm8, reg` | Write to port  |
+### 🌐 **I/O**
+
+| Mnemonic       | Opcode | Pattern      | Description    |
+| -------------- | ------ | ------------ | -------------- |
+| `in r1, port`  | `0x16` | `reg, imm21` | Read from port |
+| `out port, r1` | `0x17` | `imm21, reg` | Write to port  |
+
+---
 
 ### 🛑 Special
 
 | Mnemonic | Opcode | Pattern | Description    |
 | -------- | ------ | ------- | -------------- |
-| `HALT`   | `0x1F` | —       | Stop execution |
+| `halt`   | `0x3f` | —       | Stop execution |
 
 ---
 
-## 4. 🗺️ Memory Map
+## 4. 🗘️ Memory Map
 
-| Address Range   | Size  | Description            |
-| --------------- | ----- | ---------------------- |
-| `0x0000–0x7FFF` | 32 KB | RAM                    |
-| `0x8000–0xBFFF` | 16 KB | ROM                    |
-| `0xC000–0xC0FF` | 256 B | I/O Registers          |
-| `0xC100–0xC1FF` | 256 B | Interrupt Vector Table |
-| `0xC200–0xFFFF` | 14 KB | Reserved / Future use  |
+| Address Range           | Size    | Description            |
+| ----------------------- | ------- | ---------------------- |
+| `0x00000000–0x1FFFFFFF` | 512 MB  | RAM                    |
+| `0x20000000–0x23FFFFFF` | 64 MB   | ROM                    |
+| `0x24000000–0x240000FF` | 256 B   | I/O Registers          |
+| `0x24000100–0x240001FF` | 256 B   | Interrupt Vector Table |
+| `0x24000200–FFFFFFFF`   | ∼3.5 GB | Reserved / Future use  |
 
 ---
 
-## 5. 🧯 Status Register (Flags)
+## 5. 🫳 Status Register (Flags)
 
 | Flag | Bit | Meaning               |
 | ---- | --- | --------------------- |
@@ -152,16 +169,15 @@ Here’s the fully updated Computer Architecture Specification Document, incorpo
 
 ---
 
-## 6. 🔁 Control Flow
+## 6. ↺ Control Flow
 
-* **Jump types:** `JMP`, `JZ`, `JNZ`, `CALL`, `RET`
-* **Call behavior:** Push return address to stack
-* **Return behavior:** Pop return address from stack
+* **Jump types:** `JMP`, `JZ`, `JNZ`
+* **No CALL/RET**: Subroutine support must be implemented via manual stack and PC management.
 * **Interrupt return:** `IRET` (restores PC and flags)
 
 ---
 
-## 7. 🧯 Interrupt System
+## 7. 🛯 Interrupt System
 
 * **Interrupt types:**
 
@@ -169,8 +185,8 @@ Here’s the fully updated Computer Architecture Specification Document, incorpo
   * ☑ Non-maskable (NMI)
 * **Interrupt Vector Table:**
 
-  * Location: `0xC100–0xC1FF`
-  * Format: 16-bit addresses per interrupt
+  * Location: `0x24000100–0x240001FF`
+  * Format: 32-bit addresses per interrupt
 * **Trigger types:** ☑ Edge / ☑ Level (configurable)
 * **Context saved on interrupt:**
 
@@ -183,21 +199,21 @@ Here’s the fully updated Computer Architecture Specification Document, incorpo
 ## 8. 🔌 I/O Interface
 
 * **Method:** ☑ Memory-mapped
-* **Address range:** `0xC000–0xC0FF`
+* **Address range:** `0x24000000–0x240000FF`
 * **Standard Devices:**
 
-| Device   | Address  | Notes                              |
-| -------- | -------- | ---------------------------------- |
-| Keyboard | `0xC000` | Read-ready bit + data register     |
-| SSD      | `0xC010` | Command/data interface             |
-| Display  | `0xC020` | Optional text buffer or pixel port |
-| Serial   | `0xC030` | Optional RS232-style UART          |
+| Device   | Address      | Notes                              |
+| -------- | ------------ | ---------------------------------- |
+| Keyboard | `0x24000000` | Read-ready bit + data register     |
+| SSD      | `0x24000010` | Command/data interface             |
+| Display  | `0x24000020` | Optional text buffer or pixel port |
+| Serial   | `0x24000030` | Optional RS232-style UART          |
 
 ---
 
 ## 9. 🕹️ Boot & Reset Behavior
 
-* **Reset vector address:** `0x8000`
+* **Reset vector address:** `0x20000000`
 * **Boot sequence:**
 
   * ☑ Jump to reset vector
@@ -208,11 +224,7 @@ Here’s the fully updated Computer Architecture Specification Document, incorpo
 
 ## 10. 🧱 Physical Implementation Notes
 
-* **Technology:** CMOS (4000 series logic or custom gates)
-* **Clock frequency:** \~1 MHz (initial target)
+* **Technology:** CMOS (custom or discrete 4000 series)
+* **Clock frequency:** ∼1–10 MHz (initial target)
 * **Clock generation:** Crystal oscillator or RC timer
 * **Reset circuit:** Push-button + capacitor + Schmitt trigger inverter
-
----
-
-Let me know if you'd like a PDF or printable version next!
